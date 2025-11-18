@@ -1,4 +1,6 @@
 const express = require("express");
+// load .env when available
+require("dotenv").config();
 const { createServer } = require("http");
 const { Server } = require("socket.io");
 
@@ -6,14 +8,16 @@ const app = express();
 const httpServer = createServer(app);
 
 // Configure Socket.io with CORS so your React app can connect
-// Allow the Vite dev server ports (5173-5175) that the frontend may use.
+// Read allowed origins from env CORS_ORIGINS (comma-separated) or fallback to dev ports
+const allowedOrigins = (
+  process.env.CORS_ORIGINS ||
+  "http://localhost:5173,http://localhost:5174,http://localhost:5175"
+)
+  .split(",")
+  .map((s) => s.trim());
 const io = new Server(httpServer, {
   cors: {
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:5174",
-      "http://localhost:5175",
-    ],
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
   },
 });
@@ -62,7 +66,7 @@ io.on("connection", (socket) => {
   });
 });
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
