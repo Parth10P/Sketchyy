@@ -1,21 +1,18 @@
 const express = require("express");
 // load .env when available
 require("dotenv").config();
-const { createServer } = require("http");
 const { Server } = require("socket.io");
 
 const app = express();
-const httpServer = createServer(app);
 
-// Configure Socket.io with CORS so your React app can connect
-// Read allowed origins from env CORS_ORIGINS (comma-separated) or fallback to dev ports
-const allowedOrigins = (
-  process.env.CORS_ORIGINS ||
-  "http://localhost:5173,http://localhost:5174,http://localhost:5175"
-)
-  .split(",")
-  .map((s) => s.trim());
-const io = new Server(httpServer, {
+const allowedOrigins = process.env.CORS_ORIGINS;
+
+const PORT = process.env.PORT || 3001;
+const server = app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
@@ -50,6 +47,7 @@ io.on("connection", (socket) => {
 
     // B. Broadcast this specific line to everyone else (excluding the sender)
     socket.broadcast.emit("draw-line", data);
+    
   });
 
   // 3. HANDLE CLEAR CANVAS
@@ -64,11 +62,6 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log(`User disconnected: ${socket.id}`);
   });
-});
-
-const PORT = process.env.PORT || 3001;
-httpServer.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
 });
 
 // Simple HTTP endpoint to inspect current drawing history (useful for debugging)

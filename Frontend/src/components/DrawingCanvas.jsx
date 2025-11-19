@@ -16,9 +16,16 @@ export default function DrawingCanvas() {
   const getCanvasCoords = (event) => {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
+
+    // Touch events have touches/changedTouches; mouse events have clientX/clientY
+    const e =
+      (event.touches && event.touches[0]) ||
+      (event.changedTouches && event.changedTouches[0]) ||
+      event;
+
     return {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
     };
   };
 
@@ -63,7 +70,9 @@ export default function DrawingCanvas() {
 
     // do not set eraser here; control it from state watcher below
 
-    const handleMouseDown = (e) => {
+    const handlePointerDown = (e) => {
+      // prevent default scrolling on touch
+      if (e.cancelable) e.preventDefault();
       const { x, y } = getCanvasCoords(e);
       setIsDrawing(true);
       isDrawingRef.current = true;
@@ -72,8 +81,9 @@ export default function DrawingCanvas() {
       lastPointRef.current = { x, y };
     };
 
-    const handleMouseMove = (e) => {
+    const handlePointerMove = (e) => {
       if (!isDrawingRef.current) return;
+      if (e.cancelable) e.preventDefault();
       const { x, y } = getCanvasCoords(e);
       ctx.lineTo(x, y);
       ctx.stroke();
@@ -88,24 +98,37 @@ export default function DrawingCanvas() {
             width: ctx.lineWidth,
           });
         }
-      } catch (e) {
-        console.warn("emit draw-line failed", e);
+      } catch (err) {
+        console.warn("emit draw-line failed", err);
       }
       lastPointRef.current = { x, y };
     };
 
-    const stopDrawing = () => {
+    const stopDrawing = (e) => {
+      if (e && e.cancelable) e.preventDefault();
       setIsDrawing(false);
       isDrawingRef.current = false;
-      ctx.closePath();
+      try {
+        ctx.closePath();
+      } catch {
+        // ignore
+      }
       lastPointRef.current = null;
     };
 
-    // mouse events
-    canvas.addEventListener("mousedown", handleMouseDown);
-    canvas.addEventListener("mousemove", handleMouseMove);
+    // mouse events (desktop)
+    canvas.addEventListener("mousedown", handlePointerDown);
+    canvas.addEventListener("mousemove", handlePointerMove);
     canvas.addEventListener("mouseup", stopDrawing);
     canvas.addEventListener("mouseout", stopDrawing);
+
+    // touch events (mobile) — use non-passive so we can prevent scrolling while drawing
+    canvas.addEventListener("touchstart", handlePointerDown, {
+      passive: false,
+    });
+    canvas.addEventListener("touchmove", handlePointerMove, { passive: false });
+    canvas.addEventListener("touchend", stopDrawing, { passive: false });
+    canvas.addEventListener("touchcancel", stopDrawing, { passive: false });
 
     // handle window resize
     window.addEventListener("resize", resize);
@@ -191,10 +214,16 @@ export default function DrawingCanvas() {
     };
 
     return () => {
-      canvas.removeEventListener("mousedown", handleMouseDown);
-      canvas.removeEventListener("mousemove", handleMouseMove);
+      // remove desktop mouse listeners
+      canvas.removeEventListener("mousedown", handlePointerDown);
+      canvas.removeEventListener("mousemove", handlePointerMove);
       canvas.removeEventListener("mouseup", stopDrawing);
       canvas.removeEventListener("mouseout", stopDrawing);
+      // remove touch listeners
+      canvas.removeEventListener("touchstart", handlePointerDown);
+      canvas.removeEventListener("touchmove", handlePointerMove);
+      canvas.removeEventListener("touchend", stopDrawing);
+      canvas.removeEventListener("touchcancel", stopDrawing);
       window.removeEventListener("resize", resize);
     };
   }, []);
