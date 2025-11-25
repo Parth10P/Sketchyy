@@ -1,62 +1,55 @@
 const express = require("express");
-// load .env when available
-require("dotenv").config();
 const { Server } = require("socket.io");
+const cors = require("cors");
+require("dotenv").config();
 
 const app = express();
 
-const allowedOrigins = process.env.CORS_ORIGINS;
-
+// Configuration
 const PORT = process.env.PORT || 3001;
+const ALLOWED_ORIGINS = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(",")
+  : ["http://localhost:5173", "http://127.0.0.1:5173"];
+
+// Enable CORS for HTTP requests
+app.use(cors({ origin: ALLOWED_ORIGINS }));
+
+// Start the HTTP server
 const server = app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server running at http://localhost:${PORT}`);
 });
 
+// Setup Socket.IO for real-time communication
 const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ["GET", "POST"],
-  },
+  cors: { origin: ALLOWED_ORIGINS },
 });
 
-// --- SERVER STATE ---
-// We need to store the drawing history so new users see the existing drawing.
-// In a real production app, you might store this in a database (Redis/MongoDB).
+// Store drawing history in memory
 let drawingHistory = [];
 
 io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
 
-  // 1. INITIAL LOAD: Send existing drawing history to the NEW user only
-  // We loop through the history and send it so their canvas matches everyone else's.
-  if (drawingHistory.length > 0) {
-    socket.emit("load-canvas", drawingHistory);
-  }
+  // Send existing drawing history to the new user
+  socket.emit("load-canvas", drawingHistory);
 
-  // 2. LISTENING FOR DRAWING EVENTS
-  // We expect 'data' to look like: { prevPoint: {x, y}, currentPoint: {x, y}, color: 'red', width: 5 }
-  socket.on("draw-line", (data) => {
-    // A. Add this line to our history (server memory)
-    drawingHistory.push(data);
+  // Listen for drawing events
+  socket.on("draw-line", (line) => {
+    drawingHistory.push(line); // Save the line to history
 
-    // keep history bounded to avoid memory blowup
-    const MAX_HISTORY = 20000; // arbitrary cap for dev usage
-    if (drawingHistory.length > MAX_HISTORY) {
-      drawingHistory.splice(0, drawingHistory.length - MAX_HISTORY);
+    // Limit history size to avoid memory issues
+    if (drawingHistory.length > 20000) {
+      drawingHistory.shift();
     }
 
-    // B. Broadcast this specific line to everyone else (excluding the sender)
-    socket.broadcast.emit("draw-line", data);
-    
+    // Share the line with other users
+    socket.broadcast.emit("draw-line", line);
   });
 
-  // 3. HANDLE CLEAR CANVAS
+  // Listen for clear canvas events
   socket.on("clear-canvas", () => {
-    // A. Clear the server memory
-    drawingHistory = [];
-
-    // B. Tell everyone (including the sender) to wipe their canvas
-    io.emit("clear-canvas");
+    drawingHistory = []; // Clear the history
+    io.emit("clear-canvas"); // Notify all users
   });
 
   socket.on("disconnect", () => {
@@ -64,7 +57,7 @@ io.on("connection", (socket) => {
   });
 });
 
-// Simple HTTP endpoint to inspect current drawing history (useful for debugging)
+// HTTP endpoint to view drawing history
 app.get("/history", (req, res) => {
   res.json({ count: drawingHistory.length, history: drawingHistory });
 });
