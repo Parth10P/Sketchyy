@@ -136,7 +136,7 @@ export default function DrawingCanvas() {
     // --- socket.io setup ---
     try {
       const SOCKET_URL =
-        import.meta.env.VITE_API_URL || "http://localhost:3001";
+        import.meta.env.VITE_API_URL;
       socketRef.current = io(SOCKET_URL);
 
       socketRef.current.on("connect", () => {

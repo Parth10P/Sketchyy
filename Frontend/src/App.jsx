@@ -5,9 +5,7 @@ import DrawingCanvas from "./components/DrawingCanvas";
 function App() {
   return (
     <>
-
-
-      <DrawingCanvas/>
+      <DrawingCanvas />
     </>
   );
 }
