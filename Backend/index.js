@@ -1,9 +1,11 @@
 const express = require("express");
 const { Server } = require("socket.io");
 const cors = require("cors");
+const { PrismaClient } = require("@prisma/client");
 require("dotenv").config();
 
 const app = express();
+const prisma = new PrismaClient();
 
 // Configuration
 const PORT = process.env.PORT || 3001;
@@ -24,32 +26,45 @@ const io = new Server(server, {
   cors: { origin: ALLOWED_ORIGINS },
 });
 
-// Store drawing history in memory
-let drawingHistory = [];
-
-io.on("connection", (socket) => {
+io.on("connection", async (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   // Send existing drawing history to the new user
-  socket.emit("load-canvas", drawingHistory);
+  try {
+    const drawingHistory = await prisma.drawEvent.findMany({
+      orderBy: { createdAt: "asc" },
+    });
+    socket.emit("load-canvas", drawingHistory);
+  } catch (error) {
+    console.error("Error fetching drawing history:", error);
+  }
 
   // Listen for drawing events
   socket.on("draw-line", (line) => {
-    drawingHistory.push(line); // Save the line to history
-
-    // Limit history size to avoid memory issues
-    if (drawingHistory.length > 20000) {
-      drawingHistory.shift();
-    }
-
-    // Share the line with other users
+    // Broadcast immediately to other users (optimistic UI)
     socket.broadcast.emit("draw-line", line);
+
+    // Then save to MongoDB asynchronously
+    prisma.drawEvent.create({
+      data: {
+        prevPoint: line.prevPoint,
+        currentPoint: line.currentPoint,
+        color: line.color,
+        width: line.width,
+      },
+    }).catch((error) => {
+       console.error("Error saving draw event FULL DETAILS:", error);
+    });
   });
 
   // Listen for clear canvas events
-  socket.on("clear-canvas", () => {
-    drawingHistory = []; // Clear the history
-    io.emit("clear-canvas"); // Notify all users
+  socket.on("clear-canvas", async () => {
+    try {
+      await prisma.drawEvent.deleteMany({});
+      io.emit("clear-canvas"); // Notify all users
+    } catch (error) {
+      console.error("Error clearing canvas:", error);
+    }
   });
 
   socket.on("disconnect", () => {
@@ -58,6 +73,13 @@ io.on("connection", (socket) => {
 });
 
 // HTTP endpoint to view drawing history
-app.get("/history", (req, res) => {
-  res.json({ count: drawingHistory.length, history: drawingHistory });
+app.get("/history", async (req, res) => {
+  try {
+    const history = await prisma.drawEvent.findMany({
+      orderBy: { createdAt: "asc" },
+    });
+    res.json({ count: history.length, history });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch history" });
+  }
 });
