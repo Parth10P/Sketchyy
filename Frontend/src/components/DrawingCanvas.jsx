@@ -103,11 +103,22 @@ export default function DrawingCanvas() {
       ctx.stroke();
 
       const prev = lastPointRef.current;
-      if (prev) {
+      const canvas = canvasRef.current;
+      if (prev && canvas) {
+        // Normalize coordinates (0 to 1)
+        const normalizedPrev = {
+            x: prev.x / canvas.width,
+            y: prev.y / canvas.height
+        };
+        const normalizedCur = {
+            x: x / canvas.width,
+            y: y / canvas.height
+        };
+
         // Add to batch instead of emitting immediately
         batchRef.current.push({
-          prevPoint: prev,
-          currentPoint: { x, y },
+          prevPoint: normalizedPrev,
+          currentPoint: normalizedCur,
           color: ctx.strokeStyle,
           width: ctx.lineWidth,
         });
@@ -199,12 +210,34 @@ export default function DrawingCanvas() {
         if (!data) return;
         const prev = data.prevPoint;
         const cur = data.currentPoint;
+        
         if (!prev || !cur) return;
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        let { x: px, y: py } = prev;
+        let { x: cx, y: cy } = cur;
+
+        // Check if coordinates are normalized (0-1) or absolute (usually > 1)
+        // We assume if any coordinate is > 2, it's pixels (safeguard for screen edges)
+        
+        const isNormalized = (c) => c <= 2.0;
+
+        if (isNormalized(px) && isNormalized(py)) {
+            px *= canvas.width;
+            py *= canvas.height;
+        }
+        if (isNormalized(cx) && isNormalized(cy)) {
+            cx *= canvas.width;
+            cy *= canvas.height;
+        }
+
         ctx.beginPath();
         ctx.lineWidth = data.width || 2;
         ctx.strokeStyle = data.color || "#000";
-        ctx.moveTo(prev.x, prev.y);
-        ctx.lineTo(cur.x, cur.y);
+        ctx.moveTo(px, py);
+        ctx.lineTo(cx, cy);
         ctx.stroke();
         ctx.closePath();
       } catch (err) {
