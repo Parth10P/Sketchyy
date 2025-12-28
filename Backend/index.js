@@ -40,21 +40,38 @@ io.on("connection", async (socket) => {
   }
 
   // Listen for drawing events
-  socket.on("draw-line", (line) => {
+  socket.on("draw-line", (data) => {
     // Broadcast immediately to other users (optimistic UI)
-    socket.broadcast.emit("draw-line", line);
+    socket.broadcast.emit("draw-line", data);
 
-    // Then save to MongoDB asynchronously
-    prisma.drawEvent.create({
-      data: {
-        prevPoint: line.prevPoint,
-        currentPoint: line.currentPoint,
-        color: line.color,
-        width: line.width,
-      },
-    }).catch((error) => {
-       console.error("Error saving draw event FULL DETAILS:", error);
-    });
+    // Save to DB asynchronously
+    if (Array.isArray(data)) {
+        // Bulk insert
+        const formattedData = data.map(line => ({
+            prevPoint: line.prevPoint,
+            currentPoint: line.currentPoint,
+            color: line.color,
+            width: line.width,
+        }));
+
+        prisma.drawEvent.createMany({
+            data: formattedData
+        }).catch((error) => {
+            console.error("Error saving batch draw events:", error);
+        });
+    } else {
+        // Single insert (backward compatibility)
+        prisma.drawEvent.create({
+            data: {
+                prevPoint: data.prevPoint,
+                currentPoint: data.currentPoint,
+                color: data.color,
+                width: data.width,
+            },
+        }).catch((error) => {
+            console.error("Error saving draw event:", error);
+        });
+    }
   });
 
   // Listen for clear canvas events

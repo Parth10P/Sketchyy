@@ -11,6 +11,7 @@ export default function DrawingCanvas() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [isEraser, setIsEraser] = useState(false);
   const prevStrokeRef = useRef({ color: "#000", width: 2 });
+  const batchRef = useRef([]);
 
   // get coords in CSS pixels (context is scaled to devicePixelRatio)
   const getCanvasCoords = (event) => {
@@ -28,6 +29,18 @@ export default function DrawingCanvas() {
       y: e.clientY - rect.top,
     };
   };
+
+
+  useEffect(() => {
+    // Flush batch every 10ms
+    const interval = setInterval(() => {
+      if (batchRef.current.length > 0) {
+        socketRef.current?.emit("draw-line", batchRef.current);
+        batchRef.current = [];
+      }
+    }, 10);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -81,25 +94,23 @@ export default function DrawingCanvas() {
       lastPointRef.current = { x, y };
     };
 
-    const handlePointerMove = (e) => {
+
+  const handlePointerMove = (e) => {
       if (!isDrawingRef.current) return;
       if (e.cancelable) e.preventDefault();
       const { x, y } = getCanvasCoords(e);
       ctx.lineTo(x, y);
       ctx.stroke();
-      // emit drawing data to server
-      try {
-        const prev = lastPointRef.current;
-        if (socketRef.current && prev) {
-          socketRef.current.emit("draw-line", {
-            prevPoint: prev,
-            currentPoint: { x, y },
-            color: ctx.strokeStyle,
-            width: ctx.lineWidth,
-          });
-        }
-      } catch (err) {
-        console.warn("emit draw-line failed", err);
+
+      const prev = lastPointRef.current;
+      if (prev) {
+        // Add to batch instead of emitting immediately
+        batchRef.current.push({
+          prevPoint: prev,
+          currentPoint: { x, y },
+          color: ctx.strokeStyle,
+          width: ctx.lineWidth,
+        });
       }
       lastPointRef.current = { x, y };
     };
@@ -153,7 +164,11 @@ export default function DrawingCanvas() {
 
       // incoming draw events from other users
       socketRef.current.on("draw-line", (data) => {
-        drawRemoteLine(data);
+        if (Array.isArray(data)) {
+          data.forEach(line => drawRemoteLine(line));
+        } else {
+          drawRemoteLine(data);
+        }
       });
 
       // clear events
