@@ -26,8 +26,24 @@ const io = new Server(server, {
   cors: { origin: ALLOWED_ORIGINS },
 });
 
+// Map to track socketId -> sessionId
+const socketIdToSessionId = new Map();
+
+const broadcastUserCount = () => {
+    const uniqueSessions = new Set(socketIdToSessionId.values());
+    const count = uniqueSessions.size;
+    io.emit("user-count", count);
+    console.log(`Unique users: ${count}`);
+};
+
 io.on("connection", async (socket) => {
-  console.log(`User connected: ${socket.id}`);
+  const sessionId = socket.handshake.query.sessionId;
+  if (sessionId) {
+    socketIdToSessionId.set(socket.id, sessionId);
+    broadcastUserCount();
+  }
+  
+  console.log(`User connected: ${socket.id}, Session: ${sessionId}`);
 
   // Send existing drawing history to the new user
   try {
@@ -85,6 +101,8 @@ io.on("connection", async (socket) => {
   });
 
   socket.on("disconnect", () => {
+    socketIdToSessionId.delete(socket.id);
+    broadcastUserCount();
     console.log(`User disconnected: ${socket.id}`);
   });
 });

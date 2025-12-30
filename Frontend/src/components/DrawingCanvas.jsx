@@ -10,8 +10,14 @@ export default function DrawingCanvas() {
 
   const [isDrawing, setIsDrawing] = useState(false);
   const [isEraser, setIsEraser] = useState(false);
+  const [userCount, setUserCount] = useState(1);
   const prevStrokeRef = useRef({ color: "#000", width: 2 });
   const batchRef = useRef([]);
+
+  // Simplify session ID generation
+  const sessionId = React.useMemo(() => {
+    return Math.random().toString(36).substr(2, 9);
+  }, []);
 
   // get coords in CSS pixels (context is scaled to devicePixelRatio)
   const getCanvasCoords = (event) => {
@@ -159,10 +165,16 @@ export default function DrawingCanvas() {
     try {
       const SOCKET_URL =
         import.meta.env.VITE_API_URL;
-      socketRef.current = io(SOCKET_URL);
+      socketRef.current = io(SOCKET_URL, {
+        query: { sessionId },
+      });
 
       socketRef.current.on("connect", () => {
         console.log("connected to socket server", socketRef.current.id);
+      });
+
+      socketRef.current.on("user-count", (count) => {
+        setUserCount(count);
       });
 
       // load initial canvas history (array of draw-line events)
@@ -273,6 +285,10 @@ export default function DrawingCanvas() {
       canvas.removeEventListener("touchend", stopDrawing);
       canvas.removeEventListener("touchcancel", stopDrawing);
       window.removeEventListener("resize", resize);
+      
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
     };
   }, []);
 
@@ -337,6 +353,36 @@ export default function DrawingCanvas() {
         <button onClick={handleClear} style={{ padding: "6px 10px" }}>
           Clear
         </button>
+      </div>
+
+      <div
+        style={{
+          position: "fixed",
+          bottom: 12,
+          left: 12,
+          zIndex: 10001,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          backgroundColor: "rgba(255, 255, 255, 0.9)",
+          padding: "6px 12px",
+          borderRadius: "20px",
+          boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
+          fontSize: "14px",
+          fontWeight: "500",
+          pointerEvents: "none",
+          color:'black'
+        }}
+      >
+        <div
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            backgroundColor: "#22c55e", // Green color
+          }}
+        />
+        <span>{userCount}</span>
       </div>
 
       <canvas
